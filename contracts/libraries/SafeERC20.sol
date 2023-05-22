@@ -34,7 +34,7 @@ library SafeERC20 {
         address account
     ) internal view returns (uint256 tokenBalance) {
         bytes4 selector = IERC20.balanceOf.selector;
-        assembly {
+        assembly ("memory-safe") { // solhint-disable-line no-inline-assembly
             mstore(0x00, selector)
             mstore(0x04, account)
             let success := staticcall(gas(), token, 0x00, 0x24, 0x00, 0x20)
@@ -83,7 +83,7 @@ library SafeERC20 {
     ) internal {
         bytes4 selector = token.transferFrom.selector;
         bool success;
-        assembly {
+        assembly ("memory-safe") { // solhint-disable-line no-inline-assembly
             let data := mload(0x40)
 
             mstore(data, selector)
@@ -122,7 +122,7 @@ library SafeERC20 {
         bytes4 selector = IPermit2.transferFrom.selector;
         bool success;
 
-        assembly {
+        assembly ("memory-safe") { // solhint-disable-line no-inline-assembly
             let data := mload(0x40)
 
             mstore(data, selector)
@@ -358,7 +358,7 @@ library SafeERC20 {
         address to,
         uint256 amount
     ) private returns (bool success) {
-        assembly {
+        assembly ("memory-safe") { // solhint-disable-line no-inline-assembly
             let data := mload(0x40)
 
             mstore(data, selector)
@@ -387,7 +387,7 @@ library SafeERC20 {
     function safeDeposit(IWETH weth, uint256 amount) internal {
         if (amount > 0) {
             bytes4 selector = IWETH.deposit.selector;
-            assembly {
+            assembly ("memory-safe") { // solhint-disable-line no-inline-assembly
                 mstore(0, selector)
 
                 if iszero(call(gas(), weth, amount, 0, 4, 0, 0)) {
@@ -405,7 +405,7 @@ library SafeERC20 {
     /// @param amount The amount of WETH to withdraw.
     function safeWithdraw(IWETH weth, uint256 amount) internal {
         bytes4 selector = IWETH.withdraw.selector;
-        assembly {
+        assembly ("memory-safe") { // solhint-disable-line no-inline-assembly
             mstore(0, selector)
             mstore(4, amount)
 
@@ -426,7 +426,7 @@ library SafeERC20 {
     function safeWithdrawTo(IWETH weth, uint256 amount, address to) internal {
         safeWithdraw(weth, amount);
         if (to != address(this)) {
-            assembly {
+            assembly ("memory-safe") { // solhint-disable-line no-inline-assembly
                 if iszero(call(_RAW_CALL_GAS_LIMIT, to, amount, 0, 0, 0, 0)) {
                     let ptr := mload(0x40)
                     returndatacopy(ptr, 0, returndatasize())
