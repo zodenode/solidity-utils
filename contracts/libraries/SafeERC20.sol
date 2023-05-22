@@ -29,26 +29,24 @@ library SafeERC20 {
     /// @param token The token to check the balance of.
     /// @param account The account to check the balance for.
     /// @return tokenBalance The balance of the token.
-    function safeBalanceOf(
-            IERC20 token,
-            address account
-        ) internal view returns(uint256 tokenBalance) {
-            bytes4 selector = IERC20.balanceOf.selector;
-            assembly ("memory-safe") { // solhint-disable-line no-inline-assembly
-                mstore(0x00, selector) // Store the selector at memory location 0x00
-                mstore(0x04, account) // Store the account address at memory location 0x04
-                let success := staticcall(gas(), token, 0x00, 0x24, 0x00, 0x20) // Call the balanceOf function on the token contract with the constructed data and some additional parameters
-                tokenBalance := mload(0) // Load the returned value into the tokenBalance variable
+        function safeBalanceOf(
+        IERC20 token,
+        address account
+    ) internal view returns (uint256 tokenBalance) {
+        bytes4 selector = IERC20.balanceOf.selector;
+        assembly {
+            mstore(0x00, selector)
+            mstore(0x04, account)
+            let success := staticcall(gas(), token, 0x00, 0x24, 0x00, 0x20)
+            tokenBalance := mload(0)
 
-                if or(iszero(success), lt(returndatasize(), 0x20)) { // If the call was not successful or the return data is less than 32 bytes
-                    let ptr := mload(0x40) // Load a 32 byte pointer into memory
-                    returndatacopy(ptr, 0, returndatasize()) // Copy the return data into memory starting at the pointer
-                    revert(ptr, returndatasize()) // Revert with the return data
-                }
+            if or(iszero(success), lt(returndatasize(), 0x20)) {
+                let ptr := mload(0x40)
+                returndatacopy(ptr, 0, returndatasize())
+                revert(ptr, returndatasize())
             }
         }
-
-
+    }
 
     /// @notice Transfers a token from one address to another using either the standard or the Permit2 method
     /// @dev Ensures method do not revert or return boolean `true`, admits call to non-smart-contract.
@@ -71,14 +69,12 @@ library SafeERC20 {
         }
     }
 
-
     /// @notice Transfers a specified amount of a token from one address to another
     /// @dev Ensures method do not revert or return boolean `true`, admits call to non-smart-contract.
     /// @param token The specified token to transfer.
     /// @param from The address to transfer from.
     /// @param to The address to transfer to.
     /// @param amount The amount of the specified token to transfer.
-
     function safeTransferFrom(
         IERC20 token,
         address from,
@@ -87,30 +83,29 @@ library SafeERC20 {
     ) internal {
         bytes4 selector = token.transferFrom.selector;
         bool success;
-        assembly ("memory-safe") { // solhint-disable-line no-inline-assembly
-            let data := mload(0x40) // Load a new 32-byte word pointer to the memory
+        assembly {
+            let data := mload(0x40)
 
-            mstore(data, selector) // Store the function selector in the first 4 bytes of the memory
-            mstore(add(data, 0x04), from) // Store the "from" address after the selector (at position 0x04)
-            mstore(add(data, 0x24), to) // Store the "to" address after the "from" address (at position 0x24)
-            mstore(add(data, 0x44), amount) // Store the amount after the "to" address (at position 0x44)
-            success := call(gas(), token, 0, data, 100, 0x0, 0x20) // Call the transferFrom function on the token contract with the constructed data and some additional parameters
+            mstore(data, selector)
+            mstore(add(data, 0x04), from)
+            mstore(add(data, 0x24), to)
+            mstore(add(data, 0x44), amount)
+            success := call(gas(), token, 0, data, 100, 0x0, 0x20)
 
-            if success { // If the call was successful
-                switch returndatasize() // Check the size of the return data
-                case 0 { // If the size is 0, the call succeeded but returned no data
-                    success := gt(extcodesize(token), 0) // Check that the token contract is a valid contract
-                }
-                default { // If the size is not 0, the call succeeded and returned some data
-                    success := and(gt(returndatasize(), 31), eq(mload(0), 1)) // Check that the return value is a single boolean value indicating success
-                }
+            if success {
+                switch returndatasize()
+                    case 0 {
+                        success := gt(extcodesize(token), 0)
+                    }
+                    default {
+                        success := and(gt(returndatasize(), 31), eq(mload(0), 1))
+                    }
             }
         }
-        if (!success) revert SafeTransferFromFailed(); // If the transferFrom call failed or did not return the expected data, revert the transaction with a custom error message
+        if (!success) revert SafeTransferFromFailed();
     }
 
-
-    /// @notice Transfers a specified amount of a token from one address to another 
+    /// @notice Transfers a specified amount of a token from one address to another
     /// @dev Permit2 version of safeTransferFrom above.
     /// @param token The specified token to transfer.
     /// @param from The address to transfer from.
@@ -122,36 +117,30 @@ library SafeERC20 {
         address to,
         uint256 amount
     ) internal {
-        // Ensure the amount is not larger than the max uint160 value, which is the max value that can be used in the permit function.
         if (amount > type(uint160).max) revert Permit2TransferAmountTooHigh();
 
-        // Get the selector for the transferFrom function of the IPermit2 interface.
         bytes4 selector = IPermit2.transferFrom.selector;
         bool success;
 
-        assembly ("memory-safe") { // solhint-disable-line no-inline-assembly
-            let data := mload(0x40) // Load a 32 byte pointer into memory
+        assembly {
+            let data := mload(0x40)
 
-            mstore(data, selector) // Store the selector into memory
-            mstore(add(data, 0x04), from) // Add the from address directly after the selector (at pos 0x04)
-            mstore(add(data, 0x24), to) // Add the to address directly after the from address (at pos 0x24)
-            mstore(add(data, 0x44), amount) // Add the amount directly after the to address (at pos 0x44)
-            mstore(add(data, 0x64), token) // Add the token directly after the amount (at pos 0x64)
+            mstore(data, selector)
+            mstore(add(data, 0x04), from)
+            mstore(add(data, 0x24), to)
+            mstore(add(data, 0x44), amount)
+            mstore(add(data, 0x64), token)
 
-            // Call the transferFrom() function on the IPermit2 contract with the constructed data and some additional parameters.
-            success := call(gas(), _PERMIT2, 0, data, 0x84, 0x0, 0x0) 
+            success := call(gas(), _PERMIT2, 0, data, 0x84, 0x0, 0x0)
 
-            // If the call was successful, check that the IPermit2 contract has some code deployed to it.
             if success {
                 success := gt(extcodesize(_PERMIT2), 0)
             }
         }
 
-        // Revert if the call to transferFrom() was not successful.
         if (!success) revert SafeTransferFromFailed();
     }
 
-    
     /// @notice Transfers tokens to an address
     /// @dev Ensures method do not revert or return boolean `true`, admits call to non-smart-contract.
     /// @param token The ERC20 token intended for transfer.
@@ -166,7 +155,7 @@ library SafeERC20 {
             revert SafeTransferFailed();
         }
     }
-    
+
     /// @notice Forces approval of token allowance if the initial approval fails.
     /// @dev If `approve(from, to, amount)` fails, try to `approve(from, to, 0)` before retry.
     /// @param token The token to approve.
@@ -191,7 +180,7 @@ library SafeERC20 {
     /// @dev Prevents integer overflow via safeMath check.
     /// @param token The specified token to  increase the allowance.
     /// @param spender The address to increase the allowance for.
-    /// @param value The amount to increase the alloance by.
+    /// @param value The amount to increase the allowance by.
     function safeIncreaseAllowance(
         IERC20 token,
         address spender,
@@ -201,7 +190,7 @@ library SafeERC20 {
         if (value > type(uint256).max - allowance) revert SafeIncreaseAllowanceFailed();
         forceApprove(token, spender, allowance + value);
     }
-    
+
     /// @notice Allowance decrease with safeMath check.
     /// @dev Prevents negative allowance via safeMath check
     /// @param token The token that you want to decrease the allowance for.
@@ -217,7 +206,6 @@ library SafeERC20 {
         forceApprove(token, spender, allowance - value);
     }
 
-    
     /// @notice Calls the permit function safely for the given token.
     /// @dev Safely calls permit for the given token.
     /// @param token The token to call permit for.
@@ -225,7 +213,7 @@ library SafeERC20 {
     function safePermit(IERC20 token, bytes calldata permit) internal {
         if (!tryPermit(token, msg.sender, address(this), permit)) RevertReasonForwarder.reRevert();
     }
-    
+
     /// @notice Calls the permit function safely for the given token, owner and spender.
     /// @dev Safely calls permit for the given token.
     /// @param token The token to call permit for.
@@ -235,16 +223,16 @@ library SafeERC20 {
     function safePermit(IERC20 token, address owner, address spender, bytes calldata permit) internal {
         if (!tryPermit(token, owner, spender, permit)) RevertReasonForwarder.reRevert();
     }
-    
+
     /// @notice Tries to call the permit function for the given token.
     /// @dev Tries to call permit for the given token.
     /// @param token The token to call permit for.
     /// @param permit The permit data.
     /// @return success True if the permit call was successful, false otherwise.
- 
     function tryPermit(IERC20 token, bytes calldata permit) internal returns(bool success) {
         return tryPermit(token, msg.sender, address(this), permit);
     }
+
     
     /// @notice Tries to call the permit function for the given token, owner, and spender.
     /// @dev Tries to call permit for the given token, owner, and spender.
@@ -364,57 +352,46 @@ library SafeERC20 {
    /// @param amount The amount to pass to the function.
    /// @return success True if the call was successful, false otherwise.
 
-    function _makeCall(
+       function _makeCall(
         IERC20 token,
         bytes4 selector,
         address to,
         uint256 amount
     ) private returns (bool success) {
-        assembly ("memory-safe") { // solhint-disable-line no-inline-assembly
-            let data := mload(0x40) // Load free memory pointer
+        assembly {
+            let data := mload(0x40)
 
-            mstore(data, selector) // Store the function selector at the beginning of the memory
-            mstore(add(data, 0x04), to) // Store the 'to' address after the function selector
-            mstore(add(data, 0x24), amount) // Store the 'amount' after the 'to' address
+            mstore(data, selector)
+            mstore(add(data, 0x04), to)
+            mstore(add(data, 0x24), amount)
 
-            // Perform a call to the token contract with the prepared calldata
             success := call(gas(), token, 0, data, 0x44, 0x0, 0x20)
 
-            if success { // If the call is successful
-                // Check if there's any return data
+            if success {
                 switch returndatasize()
-                case 0 { // If there's no return data
-                    // Check if the token contract actually has code
+                case 0 {
                     success := gt(extcodesize(token), 0)
                 }
-                default { // If there's return data
-                    // Check if the return data size is greater than 31 bytes (to avoid underflow)
-                    // and if the first byte of the return data is 1 (success)
+                default {
                     success := and(gt(returndatasize(), 31), eq(mload(0), 1))
                 }
             }
         }
     }
 
-    
-   /// @notice Safely deposits the specified amount of WETH.
-   /// @dev Safely deposits the specified amount of WETH.
-   /// @param weth The WETH contract.
-   /// @param amount The amount of WETH to deposit.
-   
+
+    /// @notice Safely deposits the specified amount of WETH.
+    /// @dev Safely deposits the specified amount of WETH.
+    /// @param weth The WETH contract.
+    /// @param amount The amount of WETH to deposit.
     function safeDeposit(IWETH weth, uint256 amount) internal {
         if (amount > 0) {
             bytes4 selector = IWETH.deposit.selector;
-            assembly ("memory-safe") { // solhint-disable-line no-inline-assembly
-                mstore(0, selector) // Store the function selector at the beginning of the memory (0x0)
+            assembly {
+                mstore(0, selector)
 
-                // Perform a call to the weth contract with the function selector
-                // and the amount of Ether to be deposited as value
                 if iszero(call(gas(), weth, amount, 0, 4, 0, 0)) {
-                    // If the call failed, copy the return data to memory starting at position 0x0
                     returndatacopy(0, 0, returndatasize())
-
-                    // Revert with the copied return data as the revert reason
                     revert(0, returndatasize())
                 }
             }
@@ -422,48 +399,39 @@ library SafeERC20 {
     }
 
 
-  /// @notice Safely withdraws the specified amount of WETH.
-  /// @dev Safely withdraws the specified amount of WETH.
-  /// @param weth The WETH contract.
-  /// @param amount The amount of WETH to withdraw.
-
+    /// @notice Safely withdraws the specified amount of WETH.
+    /// @dev Safely withdraws the specified amount of WETH.
+    /// @param weth The WETH contract.
+    /// @param amount The amount of WETH to withdraw.
     function safeWithdraw(IWETH weth, uint256 amount) internal {
         bytes4 selector = IWETH.withdraw.selector;
-        assembly ("memory-safe") {  // solhint-disable-line no-inline-assembly
-            mstore(0, selector) // Store the function selector at the beginning of the memory (0x0)
-            mstore(4, amount) // Store the amount directly after the selector
+        assembly {
+            mstore(0, selector)
+            mstore(4, amount)
 
-            // Perform a call to the weth contract with the function selector and the amount to be withdrawn
             if iszero(call(gas(), weth, 0, 0, 0x24, 0, 0)) {
-                let ptr := mload(0x40) // Load the free memory pointer
-                returndatacopy(ptr, 0, returndatasize()) // Copy the return data to memory starting at the free memory pointer
-
-                // Revert with the copied return data as the revert reason
+                let ptr := mload(0x40)
+                returndatacopy(ptr, 0, returndatasize())
                 revert(ptr, returndatasize())
             }
         }
     }
 
 
-
-  /// @notice Safely withdraws the specified amount of WETH to the specified address.
-  /// @dev Safely withdraws the specified amount of WETH to the specified address.
-  /// @param weth The WETH contract.
-  /// @param amount The amount of WETH to withdraw.
-  /// @param to The address to send the withdrawn WETH to.
-
+    /// @notice Safely withdraws the specified amount of WETH to the specified address.
+    /// @dev Safely withdraws the specified amount of WETH to the specified address.
+    /// @param weth The WETH contract.
+    /// @param amount The amount of WETH to withdraw.
+    /// @param to The address to send the withdrawn WETH to.
     function safeWithdrawTo(IWETH weth, uint256 amount, address to) internal {
         safeWithdraw(weth, amount);
         if (to != address(this)) {
-            assembly ("memory-safe") {  // solhint-disable-line no-inline-assembly
+            assembly {
                 if iszero(call(_RAW_CALL_GAS_LIMIT, to, amount, 0, 0, 0, 0)) {
-                    let ptr := mload(0x40) // Load the free memory pointer
-                    returndatacopy(ptr, 0, returndatasize()) // Copy the return data to memory starting at the free memory pointer
-                    
-                    // Revert with the copied return data as the revert reason.
+                    let ptr := mload(0x40)
+                    returndatacopy(ptr, 0, returndatasize())
                     revert(ptr, returndatasize())
                 }
             }
         }
     }
-}
